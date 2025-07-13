@@ -38,11 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function markMatchesAndAncestors(dataArray, query) {
         let hasMatchInChildren = false;
         if (!dataArray) return false;
-
         dataArray.forEach(org => {
             const subsKey = Object.keys(org).find(key => Array.isArray(org[key]));
             const childrenHasMatch = subsKey ? markMatchesAndAncestors(org[subsKey], query) : false;
-
             if (isMatch(org, query)) {
                 org._searchState = 'highlight';
                 hasMatchInChildren = true;
@@ -57,18 +55,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return hasMatchInChildren;
     }
 
-    // --- Логіка Рендерингу ---
+    // --- Нова функція для форматування значень ---
+    function formatValue(key, value) {
+        if (typeof value !== 'string' || !value) return value;
+        const lowerCaseValue = value.toLowerCase();
+        const lowerCaseKey = key.toLowerCase();
+
+        // 1. Email
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+            return `<a href="mailto:${value}">${value}</a>`;
+        }
+        // 2. URL
+        if (lowerCaseValue.startsWith('http') || lowerCaseValue.startsWith('www.')) {
+            const href = lowerCaseValue.startsWith('http') ? value : `//${value}`;
+            return `<a href="${href}" target="_blank" rel="noopener noreferrer">${value}</a>`;
+        }
+        // 3. Address (by key)
+        if (lowerCaseKey.includes('address') || lowerCaseKey.includes('адреса')) {
+            const encodedAddress = encodeURIComponent(value);
+            return `<a href="https://www.google.com/maps/search/?api=1&query=${encodedAddress}" target="_blank" rel="noopener noreferrer">${value}</a>`;
+        }
+        
+        return value; // Default: plain text
+    }
+
+    // --- Логіка Рендерингу (оновлена) ---
     function renderApp() {
         const dataArray = appData ? findDataArray(appData) : null;
-        if (!dataArray) {
-            updateUIState();
-            return;
-        }
+        if (!dataArray) { updateUIState(); return; }
 
         if (currentSearchQuery) {
             markMatchesAndAncestors(dataArray, currentSearchQuery);
         } else {
-            // Очищення станів пошуку, якщо пошук порожній
             function clearSearchState(arr) {
                 if (!arr) return;
                 arr.forEach(item => {
@@ -117,15 +135,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createDisplayView(org, path) {
         let detailsHtml = '';
+
         for (const key in org) {
             if (key.startsWith('_') || key === 'isEditing' || key === 'isCollapsed' || Array.isArray(org[key])) continue;
+            
             const value = org[key];
+            const lowerCaseKey = key.toLowerCase();
+
+            // Спеціальна обробка для об'єктів
             if (typeof value === 'object' && value !== null) {
-                detailsHtml += `<div><strong>${key}:</strong><div style="padding-left: 20px;">`;
-                for(const subKey in value) detailsHtml += `${subKey}: ${value[subKey]}<br>`;
-                detailsHtml += `</div></div>`;
+                const lat = value.latitude || value.lat || value.широта;
+                const lon = value.longitude || value.lon || value.lng || value.довгота;
+                
+                // 4. Географічні координати
+                if (lat && lon) {
+                    const link = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+                    detailsHtml += `<div><strong>${key}:</strong> <a href="${link}" target="_blank" rel="noopener noreferrer">Переглянути на карті (${lat}, ${lon})</a></div>`;
+                } else {
+                    // Обробка інших вкладених об'єктів (напр. contact_details)
+                    let subDetails = '';
+                    for (const subKey in value) {
+                        subDetails += `<div><strong>${subKey}:</strong> ${formatValue(subKey, value[subKey])}</div>`;
+                    }
+                    detailsHtml += `<div><strong>${key}:</strong><div style="padding-left: 20px;">${subDetails}</div></div>`;
+                }
             } else {
-                detailsHtml += `<p><strong>${key}:</strong> ${value}</p>`;
+                // Обробка простих значень (string, number)
+                detailsHtml += `<p><strong>${key}:</strong> ${formatValue(key, value)}</p>`;
             }
         }
         
@@ -169,31 +205,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return `<form class="edit-form" data-path="${path}">${formFieldsHtml}<div class="edit-form-actions"><button type="button" class="action-btn-secondary" data-action="cancel" data-path="${path}">Скасувати</button><button type="submit" class="action-btn-success">Зберегти</button></div></form>`;
     }
-
-    // =================================================================
-    // ОСЬ ТУТ БУЛА ПОМИЛКА. ЦЯ ФУНКЦІЯ ПОВНІСТЮ ПЕРЕПИСАНА
-    // =================================================================
+    
     function getObjectAndParentByPath(path) {
         const dataArray = findDataArray(appData);
         if (!path || !dataArray) return { parent: null, obj: null, index: -1 };
-
         const parts = path.split('.');
         let current = dataArray;
-        
-        // Йдемо по шляху до передостаннього елемента, щоб отримати батьківський об'єкт/масив
         for (let i = 0; i < parts.length - 1; i++) {
             if (current === undefined) return { parent: null, obj: null, index: -1 };
             current = current[parts[i]];
         }
-        
-        // Останній елемент шляху - це ключ або індекс нашого цільового об'єкта
         const lastPart = parts[parts.length - 1];
-        
         if (current && current[lastPart] !== undefined) {
             const targetIndex = parseInt(lastPart, 10);
             return { parent: current, obj: current[lastPart], index: targetIndex };
         }
-        
         return { parent: null, obj: null, index: -1 };
     }
     
@@ -221,6 +247,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     appContainer.addEventListener('click', (e) => {
+        // Дозволяємо кліки по посиланнях, не перехоплюючи їх
+        if (e.target.tagName === 'A') {
+            return;
+        }
+
         const target = e.target.closest('[data-action]');
         if (!target) return;
         const action = target.dataset.action;
@@ -246,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let subsKey = Object.keys(obj).find(key => Array.isArray(obj[key]));
                 if (!subsKey) { subsKey = 'subsidiaries'; obj[subsKey] = []; }
                 obj[subsKey].unshift(newSub);
-                obj.isCollapsed = false; // Розгортаємо, щоб побачити новий елемент
+                obj.isCollapsed = false;
                 break;
             case 'toggle-collapse':
                 obj.isCollapsed = !obj.isCollapsed;
