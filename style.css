@@ -10,6 +10,8 @@
     --success-color: #28a745;
     --success-hover: #218838;
     --secondary-color: #6c757d;
+    --highlight-bg: #fff8c4;
+    --highlight-border: #f7d943;
 }
 
 body {
@@ -27,6 +29,7 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1.5rem;
     position: sticky;
     top: 0;
     z-index: 1000;
@@ -35,13 +38,29 @@ header {
 header h1 {
     margin: 0;
     font-size: 1.5rem;
+    white-space: nowrap;
+}
+
+.search-container {
+    flex-grow: 1;
+}
+
+#search-input {
+    width: 100%;
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    font-size: 1rem;
+}
+#search-input:disabled {
+    background-color: #e9ecef;
+    cursor: not-allowed;
 }
 
 main {
     padding: 2rem;
 }
 
-/* Стилі для початкового екрану */
 .initial-view {
     text-align: center;
     padding: 4rem 2rem;
@@ -73,11 +92,17 @@ main {
     padding: 1.5rem;
     margin-bottom: 1rem;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    transition: box-shadow 0.3s ease;
+    transition: box-shadow 0.3s ease, opacity 0.3s ease, background-color 0.3s ease;
 }
 
-.organization-card:hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+/* Стилі для пошуку */
+.organization-card.highlight {
+    background-color: var(--highlight-bg);
+    border-color: var(--highlight-border);
+    box-shadow: 0 4px 12px rgba(247, 217, 67, 0.4);
+}
+.organization-card.dimmed {
+    opacity: 0.4;
 }
 
 .org-header {
@@ -87,6 +112,32 @@ main {
     margin-bottom: 1rem;
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 1rem;
+    gap: 1rem;
+}
+
+.org-name-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.toggle-collapse {
+    font-family: monospace;
+    font-size: 1.1rem;
+    font-weight: bold;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    user-select: none;
+    flex-shrink: 0;
+}
+.toggle-collapse:hover {
+    background-color: var(--primary-bg);
 }
 
 .org-name {
@@ -106,6 +157,10 @@ main {
     color: var(--secondary-color);
 }
 
+.org-actions {
+    display: flex;
+    flex-shrink: 0;
+}
 .org-actions button, .header-actions button, .header-actions label {
     padding: 0.5rem 1rem;
     border: none;
@@ -127,7 +182,7 @@ main {
 .action-btn-edit:hover { background-color: var(--primary-hover); }
 
 .action-btn-delete { background-color: var(--danger-color); }
-.action-btn-delete:hover { background-color: var(--danger-hover); }
+.action-btn-delete:hover { background-color: var--danger-hover; }
 
 .action-btn-add { background-color: var(--success-color); }
 .action-btn-add:hover { background-color: var--success-hover; }
@@ -135,18 +190,9 @@ main {
 .action-btn-global { background-color: var(--secondary-color); }
 .action-btn-global:hover { background-color: #5a6268; }
 
-.edit-form .form-group {
-    margin-bottom: 1rem;
-}
-
-.edit-form label {
-    display: block;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-}
-
-.edit-form input[type="text"],
-.edit-form textarea {
+.edit-form .form-group { margin-bottom: 1rem; }
+.edit-form label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
+.edit-form input[type="text"], .edit-form textarea {
     width: 98%;
     padding: 0.75rem;
     border: 1px solid var(--border-color);
@@ -154,16 +200,8 @@ main {
     font-size: 1rem;
     font-family: inherit;
 }
-
-.edit-form textarea {
-    min-height: 100px;
-    resize: vertical;
-}
-
-.edit-form-actions {
-    margin-top: 1rem;
-    text-align: right;
-}
+.edit-form textarea { min-height: 100px; resize: vertical; }
+.edit-form-actions { margin-top: 1rem; text-align: right; }
 
 footer {
     text-align: center;

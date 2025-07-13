@@ -1,23 +1,18 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Глобальна змінна для зберігання даних. Початково null.
     let appData = null;
+    let currentSearchQuery = '';
 
-    // Отримуємо посилання на елементи DOM
     const appContainer = document.getElementById('app-container');
     const initialView = document.getElementById('initial-view');
     const importInput = document.getElementById('import-json-input');
     const exportBtn = document.getElementById('export-json-btn');
     const addRootBtn = document.getElementById('add-root-btn');
+    const searchInput = document.getElementById('search-input');
 
-    // Функція для пошуку основного масиву даних у завантаженому об'єкті
     function findDataArray(dataObject) {
-        if (Array.isArray(dataObject)) {
-            return dataObject;
-        }
+        if (Array.isArray(dataObject)) return dataObject;
         for (const key in dataObject) {
-            if (Array.isArray(dataObject[key])) {
-                return dataObject[key];
-            }
+            if (Array.isArray(dataObject[key])) return dataObject[key];
             if (typeof dataObject[key] === 'object' && dataObject[key] !== null) {
                 const nestedArray = findDataArray(dataObject[key]);
                 if (nestedArray) return nestedArray;
@@ -26,35 +21,69 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    // Головна функція рендерингу
+    // --- Логіка Пошуку ---
+    function isMatch(org, query) {
+        for (const key in org) {
+            if (key.startsWith('_') || Array.isArray(org[key])) continue;
+            const value = org[key];
+            if (typeof value === 'object' && value !== null) {
+                if (isMatch(value, query)) return true;
+            } else if (value && value.toString().toLowerCase().includes(query)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    function markMatchesAndAncestors(dataArray, query) {
+        let hasMatchInChildren = false;
+        if (!dataArray) return false;
+
+        dataArray.forEach(org => {
+            const subsKey = Object.keys(org).find(key => Array.isArray(org[key]));
+            const childrenHasMatch = subsKey ? markMatchesAndAncestors(org[subsKey], query) : false;
+
+            if (isMatch(org, query)) {
+                org._searchState = 'highlight';
+                hasMatchInChildren = true;
+            } else if (childrenHasMatch) {
+                org._searchState = 'ancestor';
+                org.isCollapsed = false; // Автоматично розгортаємо батьківські елементи
+                hasMatchInChildren = true;
+            } else {
+                org._searchState = 'dimmed';
+            }
+        });
+        return hasMatchInChildren;
+    }
+
+    // --- Логіка Рендерингу ---
     function renderApp() {
         const dataArray = appData ? findDataArray(appData) : null;
-        
-        // Якщо даних немає, нічого не робимо (початковий екран залишається)
         if (!dataArray) {
             updateUIState();
             return;
         }
 
-        // Ховаємо початковий екран і очищуємо контейнер
+        if (currentSearchQuery) {
+            markMatchesAndAncestors(dataArray, currentSearchQuery);
+        }
+
         initialView.style.display = 'none';
         appContainer.innerHTML = '';
-        
         const orgList = document.createElement('ul');
         orgList.className = 'organization-list';
-
         dataArray.forEach((org, index) => {
             orgList.appendChild(createOrgElement(org, `${index}`));
         });
-        
         appContainer.appendChild(orgList);
         updateUIState();
     }
 
-    // Рекурсивна функція для створення HTML-елемента
     function createOrgElement(org, path) {
         const li = document.createElement('li');
-        li.className = 'organization-card';
+        const searchClass = currentSearchQuery ? org._searchState || 'dimmed' : '';
+        li.className = `organization-card ${searchClass}`;
         li.setAttribute('data-path', path);
 
         if (org.isEditing) {
@@ -63,41 +92,44 @@ document.addEventListener('DOMContentLoaded', () => {
             li.innerHTML = createDisplayView(org, path);
         }
 
-        // Ключ для дочірніх елементів може бути різним, шукаємо його
-        const subsidiariesKey = Object.keys(org).find(key => Array.isArray(org[key]));
-        if (subsidiariesKey && org[subsidiariesKey].length > 0) {
+        const subsKey = Object.keys(org).find(key => Array.isArray(org[key]));
+        if (subsKey && org[subsKey].length > 0 && !org.isCollapsed) {
             const subList = document.createElement('ul');
             subList.className = 'organization-list';
-            org[subsidiariesKey].forEach((subOrg, index) => {
-                subList.appendChild(createOrgElement(subOrg, `${path}.${subsidiariesKey}.${index}`));
+            org[subsKey].forEach((subOrg, index) => {
+                subList.appendChild(createOrgElement(subOrg, `${path}.${subsKey}.${index}`));
             });
             li.appendChild(subList);
         }
-
         return li;
     }
 
-    // Створення HTML для відображення
     function createDisplayView(org, path) {
         let detailsHtml = '';
         for (const key in org) {
-            if (key === 'isEditing' || Array.isArray(org[key])) continue;
-            
+            if (key.startsWith('_') || key === 'isEditing' || key === 'isCollapsed' || Array.isArray(org[key])) continue;
             const value = org[key];
             if (typeof value === 'object' && value !== null) {
                 detailsHtml += `<div><strong>${key}:</strong><div style="padding-left: 20px;">`;
-                for(const subKey in value) {
-                    detailsHtml += `${subKey}: ${value[subKey]}<br>`;
-                }
+                for(const subKey in value) detailsHtml += `${subKey}: ${value[subKey]}<br>`;
                 detailsHtml += `</div></div>`;
             } else {
                 detailsHtml += `<p><strong>${key}:</strong> ${value}</p>`;
             }
         }
+        
+        const subsKey = Object.keys(org).find(key => Array.isArray(org[key]));
+        const hasChildren = subsKey && org[subsKey].length > 0;
+        const toggleButton = hasChildren 
+            ? `<span class="toggle-collapse" data-action="toggle-collapse" data-path="${path}">${org.isCollapsed ? '+' : '−'}</span>` 
+            : '<span style="display:inline-block; width: 24px;"></span>';
 
         return `
             <div class="org-header">
-                <h3 class="org-name">${org.name || org.Name || 'Елемент без назви'}</h3>
+                <div class="org-name-container">
+                    ${toggleButton}
+                    <h3 class="org-name">${org.name || org.Name || 'Елемент без назви'}</h3>
+                </div>
                 <div class="org-actions">
                     <button class="action-btn-add" data-action="add" data-path="${path}">Додати дочірній</button>
                     <button class="action-btn-edit" data-action="edit" data-path="${path}">Редагувати</button>
@@ -107,84 +139,50 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="org-details">${detailsHtml}</div>
         `;
     }
-
-    // Створення HTML для форми редагування
+    
     function createEditForm(org, path) {
         let formFieldsHtml = '';
         for (const key in org) {
-             if (key === 'isEditing' || Array.isArray(org[key])) continue;
-             
+             if (key.startsWith('_') || key === 'isEditing' || key === 'isCollapsed' || Array.isArray(org[key])) continue;
              const value = org[key];
              if (typeof value === 'object' && value !== null) {
                 formFieldsHtml += `<fieldset><legend>${key}</legend>`;
                 for(const subKey in value) {
-                    formFieldsHtml += `
-                        <div class="form-group">
-                            <label>${subKey}:</label>
-                            <input type="text" name="${key}.${subKey}" value="${value[subKey] || ''}">
-                        </div>`;
+                    formFieldsHtml += `<div class="form-group"><label>${subKey}:</label><input type="text" name="${key}.${subKey}" value="${value[subKey] || ''}"></div>`;
                 }
                 formFieldsHtml += `</fieldset>`;
              } else {
                  const isTextarea = (typeof value === 'string' && value.length > 80);
-                 formFieldsHtml += `
-                    <div class="form-group">
-                        <label>${key}:</label>
-                        ${isTextarea 
-                            ? `<textarea name="${key}">${value || ''}</textarea>`
-                            : `<input type="text" name="${key}" value="${value || ''}">`
-                        }
-                    </div>`;
+                 formFieldsHtml += `<div class="form-group"><label>${key}:</label>${isTextarea ? `<textarea name="${key}">${value || ''}</textarea>` : `<input type="text" name="${key}" value="${value || ''}">`}</div>`;
              }
         }
-
-        return `
-            <form class="edit-form" data-path="${path}">
-                ${formFieldsHtml}
-                <div class="edit-form-actions">
-                    <button type="button" class="action-btn-secondary" data-action="cancel" data-path="${path}">Скасувати</button>
-                    <button type="submit" class="action-btn-success">Зберегти</button>
-                </div>
-            </form>
-        `;
+        return `<form class="edit-form" data-path="${path}">${formFieldsHtml}<div class="edit-form-actions"><button type="button" class="action-btn-secondary" data-action="cancel" data-path="${path}">Скасувати</button><button type="submit" class="action-btn-success">Зберегти</button></div></form>`;
     }
 
-    // Функція для отримання об'єкта та його батьківського масиву за шляхом
     function getObjectAndParentByPath(path) {
         const dataArray = findDataArray(appData);
         if (!path || !dataArray) return { parent: null, obj: null, index: -1 };
-
         const parts = path.split('.');
         let current = dataArray;
         let parent = dataArray;
-        
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
             const index = parseInt(part, 10);
-            
-            if (isNaN(index)) { // це ключ, наприклад 'subsidiaries'
-                if (i > 0) {
-                   parent = current;
-                   current = current[parts[i-1]][part];
-                }
-            } else { // це індекс
-                if (i === parts.length - 1) {
-                    return { parent: current, obj: current[index], index: index };
-                }
+            if (isNaN(index)) {
+                if (i > 0) { parent = current; current = current[parts[i-1]][part]; }
+            } else {
+                if (i === parts.length - 1) return { parent: current, obj: current[index], index: index };
                 parent = current;
                 current = current[index];
             }
         }
         return { parent: null, obj: null, index: -1 };
     }
-
+    
     // --- Обробники подій ---
-
-    // Обробник імпорту файлу
     importInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
@@ -196,59 +194,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderApp();
             }
         };
-        reader.onerror = () => {
-             alert('Помилка читання файлу.');
-        };
         reader.readAsText(file);
     });
 
-    // Обробник кліків (делегування подій)
-    appContainer.addEventListener('click', (e) => {
-        const target = e.target.closest('button');
-        if (!target) return;
+    searchInput.addEventListener('input', (e) => {
+        currentSearchQuery = e.target.value.toLowerCase().trim();
+        renderApp();
+    });
 
+    appContainer.addEventListener('click', (e) => {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
         const action = target.dataset.action;
         const path = target.closest('[data-path]').dataset.path;
-
         if (!action || !path) return;
-
         const { parent, obj, index } = getObjectAndParentByPath(path);
         if (!obj) return;
 
         switch (action) {
-            case 'edit':
-                obj.isEditing = true;
-                break;
-            case 'cancel':
-                delete obj.isEditing;
-                break;
-            case 'delete':
-                if (confirm(`Ви впевнені, що хочете видалити елемент "${obj.name || 'цей елемент'}"?`)) {
-                    parent.splice(index, 1);
-                }
-                break;
+            case 'edit': obj.isEditing = true; break;
+            case 'cancel': delete obj.isEditing; break;
+            case 'delete': if (confirm(`Ви впевнені, що хочете видалити елемент "${obj.name || 'цей елемент'}"?`)) { parent.splice(index, 1); } break;
             case 'add':
                 const newSub = { name: "Новий елемент", isEditing: true };
-                // Шукаємо ключ для дочірніх елементів або створюємо 'subsidiaries'
                 let subsKey = Object.keys(obj).find(key => Array.isArray(obj[key]));
-                if (!subsKey) {
-                    subsKey = 'subsidiaries';
-                    obj[subsKey] = [];
-                }
+                if (!subsKey) { subsKey = 'subsidiaries'; obj[subsKey] = []; }
                 obj[subsKey].unshift(newSub);
+                break;
+            case 'toggle-collapse':
+                obj.isCollapsed = !obj.isCollapsed;
                 break;
         }
         renderApp();
     });
-
-    // Обробник збереження форми
+    
     appContainer.addEventListener('submit', (e) => {
         e.preventDefault();
         const form = e.target;
         const path = form.dataset.path;
         const { obj } = getObjectAndParentByPath(path);
         if (!obj) return;
-
         const formData = new FormData(form);
         for (let [key, value] of formData.entries()) {
             if (key.includes('.')) {
@@ -259,28 +244,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 obj[key] = value;
             }
         }
-        
         delete obj.isEditing;
         renderApp();
     });
 
-    // Експорт в JSON
     exportBtn.addEventListener('click', () => {
         if (!appData) return;
-
         function cleanup(obj) {
             if (typeof obj !== 'object' || obj === null) return;
-            delete obj.isEditing;
-            Object.values(obj).forEach(value => {
-                if (Array.isArray(value)) {
-                    value.forEach(cleanup);
+            // Видаляємо всі службові поля
+            Object.keys(obj).forEach(key => {
+                if (key.startsWith('_') || key === 'isEditing' || key === 'isCollapsed') {
+                    delete obj[key];
                 }
             });
+            Object.values(obj).forEach(value => {
+                if (Array.isArray(value)) value.forEach(cleanup);
+            });
         }
-        
         const dataToExport = JSON.parse(JSON.stringify(appData));
         cleanup(dataToExport);
-
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToExport, null, 2));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
@@ -290,20 +273,18 @@ document.addEventListener('DOMContentLoaded', () => {
         downloadAnchorNode.remove();
     });
 
-    // Додавання кореневого елемента
     addRootBtn.addEventListener('click', () => {
         const dataArray = findDataArray(appData);
         if (!dataArray) return;
-
         const newOrg = { name: "Новий кореневий елемент", isEditing: true };
         dataArray.unshift(newOrg);
         renderApp();
     });
     
-    // Функція для оновлення стану кнопок в хедері
     function updateUIState() {
         const hasData = appData !== null;
         exportBtn.disabled = !hasData;
         addRootBtn.disabled = !hasData;
+        searchInput.disabled = !hasData;
     }
 });

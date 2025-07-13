@@ -10,8 +10,10 @@
 
     <header>
         <h1>OrgTree: Редактор ієрархічних даних</h1>
+        <div class="search-container">
+            <input type="search" id="search-input" placeholder="Пошук по всьому дереву..." disabled>
+        </div>
         <div class="header-actions">
-            <!-- Кнопка для імпорту -->
             <input type="file" id="import-json-input" accept=".json" style="display: none;">
             <label for="import-json-input" class="action-btn-global">Імпорт JSON</label>
             
@@ -21,11 +23,10 @@
     </header>
 
     <main id="app-container">
-        <!-- Початкове повідомлення -->
         <div id="initial-view" class="initial-view">
             <h2>Ласкаво просимо до OrgTree!</h2>
-            <p>Для початку роботи, будь ласка, імпортуйте JSON-файл за допомогою кнопки у верхньому правому куті.</p>
-            <p>Додаток автоматично відобразить ієрархічну структуру даних з файлу.</p>
+            <p>Для початку роботи, будь ласка, імпортуйте JSON-файл.</p>
+            <p>Додаток дозволяє редагувати, шукати, згортати та розгортати ієрархічні дані.</p>
         </div>
     </main>
 
