@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 hasMatchInChildren = true;
             } else if (childrenHasMatch) {
                 org._searchState = 'ancestor';
-                org.isCollapsed = false; // Автоматично розгортаємо батьківські елементи
+                org.isCollapsed = false;
                 hasMatchInChildren = true;
             } else {
                 org._searchState = 'dimmed';
@@ -67,6 +67,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentSearchQuery) {
             markMatchesAndAncestors(dataArray, currentSearchQuery);
+        } else {
+            // Очищення станів пошуку, якщо пошук порожній
+            function clearSearchState(arr) {
+                if (!arr) return;
+                arr.forEach(item => {
+                    delete item._searchState;
+                    const subsKey = Object.keys(item).find(key => Array.isArray(item[key]));
+                    if (subsKey) clearSearchState(item[subsKey]);
+                });
+            }
+            clearSearchState(dataArray);
         }
 
         initialView.style.display = 'none';
@@ -159,23 +170,30 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<form class="edit-form" data-path="${path}">${formFieldsHtml}<div class="edit-form-actions"><button type="button" class="action-btn-secondary" data-action="cancel" data-path="${path}">Скасувати</button><button type="submit" class="action-btn-success">Зберегти</button></div></form>`;
     }
 
+    // =================================================================
+    // ОСЬ ТУТ БУЛА ПОМИЛКА. ЦЯ ФУНКЦІЯ ПОВНІСТЮ ПЕРЕПИСАНА
+    // =================================================================
     function getObjectAndParentByPath(path) {
         const dataArray = findDataArray(appData);
         if (!path || !dataArray) return { parent: null, obj: null, index: -1 };
+
         const parts = path.split('.');
         let current = dataArray;
-        let parent = dataArray;
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-            const index = parseInt(part, 10);
-            if (isNaN(index)) {
-                if (i > 0) { parent = current; current = current[parts[i-1]][part]; }
-            } else {
-                if (i === parts.length - 1) return { parent: current, obj: current[index], index: index };
-                parent = current;
-                current = current[index];
-            }
+        
+        // Йдемо по шляху до передостаннього елемента, щоб отримати батьківський об'єкт/масив
+        for (let i = 0; i < parts.length - 1; i++) {
+            if (current === undefined) return { parent: null, obj: null, index: -1 };
+            current = current[parts[i]];
         }
+        
+        // Останній елемент шляху - це ключ або індекс нашого цільового об'єкта
+        const lastPart = parts[parts.length - 1];
+        
+        if (current && current[lastPart] !== undefined) {
+            const targetIndex = parseInt(lastPart, 10);
+            return { parent: current, obj: current[lastPart], index: targetIndex };
+        }
+        
         return { parent: null, obj: null, index: -1 };
     }
     
@@ -209,17 +227,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const path = target.closest('[data-path]').dataset.path;
         if (!action || !path) return;
         const { parent, obj, index } = getObjectAndParentByPath(path);
-        if (!obj) return;
+        
+        if (!obj) {
+            console.error("Не вдалося знайти об'єкт за шляхом:", path);
+            return;
+        }
 
         switch (action) {
             case 'edit': obj.isEditing = true; break;
             case 'cancel': delete obj.isEditing; break;
-            case 'delete': if (confirm(`Ви впевнені, що хочете видалити елемент "${obj.name || 'цей елемент'}"?`)) { parent.splice(index, 1); } break;
+            case 'delete': 
+                if (confirm(`Ви впевнені, що хочете видалити елемент "${obj.name || 'цей елемент'}"?`)) { 
+                    parent.splice(index, 1); 
+                } 
+                break;
             case 'add':
                 const newSub = { name: "Новий елемент", isEditing: true };
                 let subsKey = Object.keys(obj).find(key => Array.isArray(obj[key]));
                 if (!subsKey) { subsKey = 'subsidiaries'; obj[subsKey] = []; }
                 obj[subsKey].unshift(newSub);
+                obj.isCollapsed = false; // Розгортаємо, щоб побачити новий елемент
                 break;
             case 'toggle-collapse':
                 obj.isCollapsed = !obj.isCollapsed;
@@ -252,7 +279,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!appData) return;
         function cleanup(obj) {
             if (typeof obj !== 'object' || obj === null) return;
-            // Видаляємо всі службові поля
             Object.keys(obj).forEach(key => {
                 if (key.startsWith('_') || key === 'isEditing' || key === 'isCollapsed') {
                     delete obj[key];
