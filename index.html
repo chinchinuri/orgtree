@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OrgTree - JSON Data Editor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <header>
+        <h1>OrgTree: Редактор ієрархічних даних</h1>
+        <div class="header-actions">
+            <!-- Кнопка для імпорту -->
+            <input type="file" id="import-json-input" accept=".json" style="display: none;">
+            <label for="import-json-input" class="action-btn-global">Імпорт JSON</label>
+            
+            <button id="add-root-btn" class="action-btn-global" disabled>Додати елемент</button>
+            <button id="export-json-btn" class="action-btn-global" disabled>Експортувати в JSON</button>
+        </div>
+    </header>
+
+    <main id="app-container">
+        <!-- Початкове повідомлення -->
+        <div id="initial-view" class="initial-view">
+            <h2>Ласкаво просимо до OrgTree!</h2>
+            <p>Для початку роботи, будь ласка, імпортуйте JSON-файл за допомогою кнопки у верхньому правому куті.</p>
+            <p>Додаток автоматично відобразить ієрархічну структуру даних з файлу.</p>
+        </div>
+    </main>
+
+    <footer>
+        <p>Усі зміни зберігаються лише в браузері до моменту експорту.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
