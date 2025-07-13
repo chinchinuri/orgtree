@@ -20,8 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return null;
     }
-
-    // --- Логіка Пошуку ---
+    
     function isMatch(org, query) {
         for (const key in org) {
             if (key.startsWith('_') || Array.isArray(org[key])) continue;
@@ -55,31 +54,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return hasMatchInChildren;
     }
 
-    // --- Нова функція для форматування значень ---
     function formatValue(key, value) {
         if (typeof value !== 'string' || !value) return value;
         const lowerCaseValue = value.toLowerCase();
         const lowerCaseKey = key.toLowerCase();
-
-        // 1. Email
-        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-            return `<a href="mailto:${value}">${value}</a>`;
-        }
-        // 2. URL
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return `<a href="mailto:${value}">${value}</a>`;
         if (lowerCaseValue.startsWith('http') || lowerCaseValue.startsWith('www.')) {
             const href = lowerCaseValue.startsWith('http') ? value : `//${value}`;
             return `<a href="${href}" target="_blank" rel="noopener noreferrer">${value}</a>`;
         }
-        // 3. Address (by key)
         if (lowerCaseKey.includes('address') || lowerCaseKey.includes('адреса')) {
             const encodedAddress = encodeURIComponent(value);
             return `<a href="https://www.google.com/maps/search/?api=1&query=${encodedAddress}" target="_blank" rel="noopener noreferrer">${value}</a>`;
         }
-        
-        return value; // Default: plain text
+        return value;
     }
 
-    // --- Логіка Рендерингу (оновлена) ---
     function renderApp() {
         const dataArray = appData ? findDataArray(appData) : null;
         if (!dataArray) { updateUIState(); return; }
@@ -135,75 +125,73 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createDisplayView(org, path) {
         let detailsHtml = '';
+        for (const key in org) {
+            if (key.startsWith('_') || key === 'isEditing' || key === 'isCollapsed' || Array.isArray(org[key])) continue;
+            const value = org[key];
+            if (typeof value === 'object' && value !== null) {
+                const lat = value.latitude || value.lat || value.широта;
+                const lon = value.longitude || value.lon || value.lng || value.довгота;
+                if (lat && lon) {
+                    detailsHtml += `<div><strong>${key}:</strong> <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lon}" target="_blank" rel="noopener noreferrer">Переглянути на карті (${lat}, ${lon})</a></div>`;
+                } else {
+                    let subDetails = '';
+                    for (const subKey in value) subDetails += `<div><strong>${subKey}:</strong> ${formatValue(subKey, value[subKey])}</div>`;
+                    detailsHtml += `<div><strong>${key}:</strong><div style="padding-left: 20px;">${subDetails}</div></div>`;
+                }
+            } else {
+                detailsHtml += `<p><strong>${key}:</strong> ${formatValue(key, value)}</p>`;
+            }
+        }
+        const subsKey = Object.keys(org).find(key => Array.isArray(org[key]));
+        const hasChildren = subsKey && org[subsKey].length > 0;
+        const toggleButton = hasChildren ? `<span class="toggle-collapse" data-action="toggle-collapse" data-path="${path}">${org.isCollapsed ? '+' : '−'}</span>` : '<span style="display:inline-block; width: 24px;"></span>';
+        return `<div class="org-header"><div class="org-name-container">${toggleButton}<h3 class="org-name">${org.name || org.Name || 'Елемент без назви'}</h3></div><div class="org-actions"><button class="action-btn-add" data-action="add" data-path="${path}">Додати дочірній</button><button class="action-btn-edit" data-action="edit" data-path="${path}">Редагувати</button><button class="action-btn-delete" data-action="delete" data-path="${path}">Видалити</button></div></div><div class="org-details">${detailsHtml}</div>`;
+    }
+
+    // --- ПОВНІСТЮ ПЕРЕПИСАНА ФУНКЦІЯ ---
+    function createEditForm(org, path) {
+        let simpleFieldsHtml = '';
+        let complexFieldsHtml = '';
 
         for (const key in org) {
             if (key.startsWith('_') || key === 'isEditing' || key === 'isCollapsed' || Array.isArray(org[key])) continue;
             
             const value = org[key];
-            const lowerCaseKey = key.toLowerCase();
-
-            // Спеціальна обробка для об'єктів
             if (typeof value === 'object' && value !== null) {
-                const lat = value.latitude || value.lat || value.широта;
-                const lon = value.longitude || value.lon || value.lng || value.довгота;
-                
-                // 4. Географічні координати
-                if (lat && lon) {
-                    const link = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-                    detailsHtml += `<div><strong>${key}:</strong> <a href="${link}" target="_blank" rel="noopener noreferrer">Переглянути на карті (${lat}, ${lon})</a></div>`;
-                } else {
-                    // Обробка інших вкладених об'єктів (напр. contact_details)
-                    let subDetails = '';
-                    for (const subKey in value) {
-                        subDetails += `<div><strong>${subKey}:</strong> ${formatValue(subKey, value[subKey])}</div>`;
-                    }
-                    detailsHtml += `<div><strong>${key}:</strong><div style="padding-left: 20px;">${subDetails}</div></div>`;
+                // Вкладені об'єкти (не редагуємо структуру, лише значення)
+                complexFieldsHtml += `<fieldset><legend>${key}</legend>`;
+                for(const subKey in value) {
+                    complexFieldsHtml += `<div class="form-group"><label>${subKey}:</label><input type="text" class="form-complex-value" data-parent-key="${key}" name="${subKey}" value="${value[subKey] || ''}"></div>`;
                 }
+                complexFieldsHtml += `</fieldset>`;
             } else {
-                // Обробка простих значень (string, number)
-                detailsHtml += `<p><strong>${key}:</strong> ${formatValue(key, value)}</p>`;
+                // Прості ключ-значення (повністю редаговані)
+                const isTextarea = (typeof value === 'string' && value.length > 80);
+                const valueInput = isTextarea 
+                    ? `<textarea data-type="value">${value || ''}</textarea>`
+                    : `<input type="text" data-type="value" value="${value || ''}">`;
+                simpleFieldsHtml += `
+                    <div class="form-field-row">
+                        <input type="text" data-type="key" value="${key}" placeholder="Ключ">
+                        ${valueInput}
+                        <button type="button" class="delete-field-btn" data-action="delete-field" title="Видалити поле">&times;</button>
+                    </div>`;
             }
         }
-        
-        const subsKey = Object.keys(org).find(key => Array.isArray(org[key]));
-        const hasChildren = subsKey && org[subsKey].length > 0;
-        const toggleButton = hasChildren 
-            ? `<span class="toggle-collapse" data-action="toggle-collapse" data-path="${path}">${org.isCollapsed ? '+' : '−'}</span>` 
-            : '<span style="display:inline-block; width: 24px;"></span>';
 
         return `
-            <div class="org-header">
-                <div class="org-name-container">
-                    ${toggleButton}
-                    <h3 class="org-name">${org.name || org.Name || 'Елемент без назви'}</h3>
+            <form class="edit-form" data-path="${path}">
+                <div class="edit-form-fields">
+                    ${simpleFieldsHtml}
                 </div>
-                <div class="org-actions">
-                    <button class="action-btn-add" data-action="add" data-path="${path}">Додати дочірній</button>
-                    <button class="action-btn-edit" data-action="edit" data-path="${path}">Редагувати</button>
-                    <button class="action-btn-delete" data-action="delete" data-path="${path}">Видалити</button>
+                <button type="button" class="add-field-btn" data-action="add-field">+ Додати поле</button>
+                <hr>
+                ${complexFieldsHtml}
+                <div class="edit-form-actions">
+                    <button type="button" class="action-btn-secondary" data-action="cancel" data-path="${path}">Скасувати</button>
+                    <button type="submit" class="action-btn-success">Зберегти</button>
                 </div>
-            </div>
-            <div class="org-details">${detailsHtml}</div>
-        `;
-    }
-    
-    function createEditForm(org, path) {
-        let formFieldsHtml = '';
-        for (const key in org) {
-             if (key.startsWith('_') || key === 'isEditing' || key === 'isCollapsed' || Array.isArray(org[key])) continue;
-             const value = org[key];
-             if (typeof value === 'object' && value !== null) {
-                formFieldsHtml += `<fieldset><legend>${key}</legend>`;
-                for(const subKey in value) {
-                    formFieldsHtml += `<div class="form-group"><label>${subKey}:</label><input type="text" name="${key}.${subKey}" value="${value[subKey] || ''}"></div>`;
-                }
-                formFieldsHtml += `</fieldset>`;
-             } else {
-                 const isTextarea = (typeof value === 'string' && value.length > 80);
-                 formFieldsHtml += `<div class="form-group"><label>${key}:</label>${isTextarea ? `<textarea name="${key}">${value || ''}</textarea>` : `<input type="text" name="${key}" value="${value || ''}">`}</div>`;
-             }
-        }
-        return `<form class="edit-form" data-path="${path}">${formFieldsHtml}<div class="edit-form-actions"><button type="button" class="action-btn-secondary" data-action="cancel" data-path="${path}">Скасувати</button><button type="submit" class="action-btn-success">Зберегти</button></div></form>`;
+            </form>`;
     }
     
     function getObjectAndParentByPath(path) {
@@ -223,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return { parent: null, obj: null, index: -1 };
     }
     
-    // --- Обробники подій ---
+    // --- Обробники подій (доповнені) ---
     importInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -247,31 +235,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     appContainer.addEventListener('click', (e) => {
-        // Дозволяємо кліки по посиланнях, не перехоплюючи їх
-        if (e.target.tagName === 'A') {
-            return;
-        }
+        if (e.target.tagName === 'A') return;
 
         const target = e.target.closest('[data-action]');
         if (!target) return;
         const action = target.dataset.action;
-        const path = target.closest('[data-path]').dataset.path;
-        if (!action || !path) return;
-        const { parent, obj, index } = getObjectAndParentByPath(path);
-        
-        if (!obj) {
-            console.error("Не вдалося знайти об'єкт за шляхом:", path);
+
+        // Обробка дій всередині форми редагування
+        if (action === 'delete-field') {
+            target.closest('.form-field-row').remove();
             return;
         }
+        if (action === 'add-field') {
+            const fieldsContainer = target.previousElementSibling;
+            const newFieldHtml = `
+                <div class="form-field-row">
+                    <input type="text" data-type="key" value="нове_поле" placeholder="Ключ">
+                    <input type="text" data-type="value" value="" placeholder="Значення">
+                    <button type="button" class="delete-field-btn" data-action="delete-field" title="Видалити поле">&times;</button>
+                </div>`;
+            fieldsContainer.insertAdjacentHTML('beforeend', newFieldHtml);
+            return;
+        }
+
+        // Обробка дій над елементами дерева
+        const path = target.closest('[data-path]').dataset.path;
+        if (!path) return;
+        const { parent, obj, index } = getObjectAndParentByPath(path);
+        if (!obj) { console.error("Не вдалося знайти об'єкт за шляхом:", path); return; }
 
         switch (action) {
             case 'edit': obj.isEditing = true; break;
             case 'cancel': delete obj.isEditing; break;
-            case 'delete': 
-                if (confirm(`Ви впевнені, що хочете видалити елемент "${obj.name || 'цей елемент'}"?`)) { 
-                    parent.splice(index, 1); 
-                } 
-                break;
+            case 'delete': if (confirm(`Ви впевнені?`)) { parent.splice(index, 1); } break;
             case 'add':
                 const newSub = { name: "Новий елемент", isEditing: true };
                 let subsKey = Object.keys(obj).find(key => Array.isArray(obj[key]));
@@ -279,30 +275,53 @@ document.addEventListener('DOMContentLoaded', () => {
                 obj[subsKey].unshift(newSub);
                 obj.isCollapsed = false;
                 break;
-            case 'toggle-collapse':
-                obj.isCollapsed = !obj.isCollapsed;
-                break;
+            case 'toggle-collapse': obj.isCollapsed = !obj.isCollapsed; break;
         }
         renderApp();
     });
     
+    // --- ПОВНІСТЮ ПЕРЕПИСАНИЙ ОБРОБНИК ЗБЕРЕЖЕННЯ ---
     appContainer.addEventListener('submit', (e) => {
         e.preventDefault();
         const form = e.target;
         const path = form.dataset.path;
-        const { obj } = getObjectAndParentByPath(path);
-        if (!obj) return;
-        const formData = new FormData(form);
-        for (let [key, value] of formData.entries()) {
-            if (key.includes('.')) {
-                const [objKey, propKey] = key.split('.');
-                if (!obj[objKey]) obj[objKey] = {};
-                obj[objKey][propKey] = value;
-            } else {
-                obj[key] = value;
+        const { obj: originalObject } = getObjectAndParentByPath(path);
+        if (!originalObject) return;
+
+        const newObjectData = {};
+
+        // 1. Збираємо прості поля (з можливістю зміни ключа)
+        form.querySelectorAll('.form-field-row').forEach(row => {
+            const key = row.querySelector('[data-type="key"]').value.trim();
+            const value = row.querySelector('[data-type="value"]').value;
+            if (key) {
+                newObjectData[key] = value;
+            }
+        });
+
+        // 2. Збираємо значення з комплексних полів (де ключ не змінюється)
+        form.querySelectorAll('.form-complex-value').forEach(input => {
+            const parentKey = input.dataset.parentKey;
+            const subKey = input.name;
+            const value = input.value;
+            if (!newObjectData[parentKey]) {
+                newObjectData[parentKey] = {};
+            }
+            newObjectData[parentKey][subKey] = value;
+        });
+
+        // 3. Зберігаємо системні поля та масиви з оригінального об'єкта
+        for (const key in originalObject) {
+            if (key.startsWith('_') || key === 'isCollapsed' || Array.isArray(originalObject[key])) {
+                newObjectData[key] = originalObject[key];
             }
         }
-        delete obj.isEditing;
+        
+        // 4. Повністю замінюємо дані в оригінальному об'єкті
+        Object.keys(originalObject).forEach(key => delete originalObject[key]);
+        Object.assign(originalObject, newObjectData);
+
+        delete originalObject.isEditing;
         renderApp();
     });
 
